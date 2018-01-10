@@ -90,27 +90,3 @@ class DeformConv2D(nn.Module):
         x_offset = x_offset.contiguous().view(b, c, h*ks, w*ks)
 
         return x_offset
-
-# N, inC, inH, inW = 2, 6, 30, 40
-# kH, kW = 3, 3
-#
-# # set devices
-# # ---------------------------------------
-# use_gpu = torch.cuda.is_available()
-# gpu_device = 0
-# if use_gpu:
-#     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
-#     print("Using gpu{}".format(os.getenv("CUDA_VISIBLE_DEVICES")))
-# # ---------------------------------------
-#
-# inputs = Variable(torch.randn(N, inC, inH, inW).cuda())
-# model = DeformConv2D(inC, 1).cuda()
-#
-# learning_rate = 1e-4
-# optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-#
-# for i in range(5):
-#     optimizer.zero_grad()
-#     output = model(inputs)
-#     output.backward(output.data)
-#     optimizer.step()
