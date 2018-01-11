@@ -51,9 +51,9 @@ test_loader = torch.utils.data.DataLoader(
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 
-class DefromNet(nn.Module):
+class DeformNet(nn.Module):
     def __init__(self):
-        super(DefromNet, self).__init__()
+        super(DeformNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
 
@@ -118,7 +118,7 @@ class ExampleNet(nn.Module):
 
         return F.log_softmax(x, dim=1)
 
-model = DefromNet()
+model = DeformNet()
 
 
 def init_weights(m):

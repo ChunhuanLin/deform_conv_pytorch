@@ -1,10 +1,7 @@
-import os
-from math import sqrt
 from torch.autograd import Variable
 import torch
 from torch import nn
 import numpy as np
-from pprint import pprint
 
 
 class DeformConv2D(nn.Module):
@@ -22,6 +19,7 @@ class DeformConv2D(nn.Module):
         offset = self.conv_offset(x)
         dtype = offset.data.type()
         b, c, h, w = x.size()
+        ks = self.kernel_size
         N = self.N
         zero = Variable(torch.FloatTensor([0]).type_as(offset.data), requires_grad=True)
 
@@ -48,7 +46,7 @@ class DeformConv2D(nn.Module):
         # (b, c, h, w, N)
         x_offset = torch.bmm(G, x).contiguous().view(b, N, h, w, c).permute(0, 4, 2, 3, 1)
         # (b, c, h*kernel_size, w*kernel_size)
-        x_offset = self._reshape_x_offset(x_offset)
+        x_offset = self._reshape_x_offset(x_offset, ks)
         out = self.conv_kernel(x_offset)
 
         return out
@@ -83,9 +81,8 @@ class DeformConv2D(nn.Module):
 
         return q
 
-    def _reshape_x_offset(self, x_offset):
+    def _reshape_x_offset(self, x_offset, ks):
         b, c, h, w, N = x_offset.size()
-        ks = int(sqrt(N))
         x_offset = torch.cat([x_offset[..., s:s+ks].contiguous().view(b, c, h, w*ks) for s in range(0, N, ks)], dim=-1)
         x_offset = x_offset.contiguous().view(b, c, h*ks, w*ks)
 
