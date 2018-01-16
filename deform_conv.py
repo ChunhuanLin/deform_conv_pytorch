@@ -18,12 +18,46 @@ class DeformConv2D(nn.Module):
         offset = self.conv_offset(x)
         dtype = offset.data.type()
         ks = self.kernel_size
+        N = offset.size(1) // 2
 
-        # (b, 2N, h, w)
+        # # (b, 2N, h, w)
         p = self._get_p(offset, dtype)
 
+        # (b, h, w, 2N)
+        p = p.contiguous().permute(0, 2, 3, 1)
+
+        q_lt = p.floor().long()
+        q_rb = p.ceil().long()
+        q_lb = torch.cat([q_lt[..., :N], q_rb[..., N:]], -1)
+        q_rt = torch.cat([q_rb[..., :N], q_lt[..., N:]], -1)
+
+        # (b, h, w, N)
+        overlap_indices = torch.eq(q_lt, q_rb) + 1
+        overlap = (overlap_indices[..., :N] * overlap_indices[..., N:]).float()
+
+        # bilinear kernel (b, h, w, N)
+        g_lt_x = 1 - torch.abs(p[..., :N] - q_lt[..., :N].type_as(p))
+        g_lt_y = 1 - torch.abs(p[..., N:] - q_lt[..., N:].type_as(p))
+        g_rb_x = 1 - torch.abs(p[..., :N] - q_rb[..., :N].type_as(p))
+        g_rb_y = 1 - torch.abs(p[..., N:] - q_rb[..., N:].type_as(p))
+        g_lb_x = 1 - torch.abs(p[..., :N] - q_lb[..., :N].type_as(p))
+        g_lb_y = 1 - torch.abs(p[..., N:] - q_lb[..., N:].type_as(p))
+        g_rt_x = 1 - torch.abs(p[..., :N] - q_rt[..., :N].type_as(p))
+        g_rt_y = 1 - torch.abs(p[..., N:] - q_rt[..., N:].type_as(p))
+
         # (b, c, h, w, N)
-        x_offset = self._get_x_offset(x, p, dtype)
+        x_q_lt = self._get_x_q(x, q_lt, N)
+        x_q_rb = self._get_x_q(x, q_rb, N)
+        x_q_lb = self._get_x_q(x, q_lb, N)
+        x_q_rt = self._get_x_q(x, q_rt, N)
+
+        # (b, c, h, w, N)
+        x_offset = (g_lt_x * g_lt_y).unsqueeze(dim=1) * x_q_lt + \
+                 (g_rb_x * g_rb_y).unsqueeze(dim=1) * x_q_rb + \
+                 (g_lb_x * g_lb_y).unsqueeze(dim=1) * x_q_lb + \
+                 (g_rt_x * g_rt_y).unsqueeze(dim=1) * x_q_rt
+
+        x_offset /= overlap.unsqueeze(dim=1)
 
         # (b, c, h*kernel_size, w*kernel_size)
         x_offset = self._reshape_x_offset(x_offset, ks)
@@ -74,24 +108,17 @@ class DeformConv2D(nn.Module):
 
         return q
 
-    def _get_x_offset(self, x, p, dtype):
+    def _get_x_q(self, x, q, N):
         b, c, h, w = x.size()
-        N = p.size(1)//2
-        # (h, w)
-        q = self._get_q(x.size(), dtype)
-        # (b,, 2N, h, w, 1, 1)
-        p = p.unsqueeze(dim=-1).unsqueeze(dim=-1)
-        zero = Variable(torch.FloatTensor([0]).type(dtype), requires_grad=True)
+        # (b, c, h*w)
+        x = x.contiguous().view(b, c, -1)
 
-        # (b, N, h, w, h, w)
-        G = torch.max((1-torch.abs(p[:, :N, :, :, :, :] - q[0, :, :])), zero)\
-            * torch.max((1-torch.abs(p[:, N:, :, :, :, :] - q[1, :, :])), zero)
-        # (b, N*h*w, h*w)
-        G = G.contiguous().view(b, N*h*w, -1)
-        # (b, h*w, c)
-        x = x.permute(0, 2, 3, 1).contiguous().view(b, -1, c)
-        # (b, c, h, w, N)
-        x_offset = torch.bmm(G, x).contiguous().view(b, N, h, w, c).permute(0, 4, 2, 3, 1)
+        # (b, h, w, N)
+        index = q[..., :N]*w + q[..., N:]  # offset_x*offset_y + offset_y
+        # (b, c, h*w*N)
+        index = index.contiguous().unsqueeze(dim=1).expand(-1, c, -1, -1, -1).contiguous().view(b, c, -1)
+
+        x_offset = x.gather(dim=-1, index=index).contiguous().view(b, c, h, w, N)
 
         return x_offset
 
