@@ -36,14 +36,10 @@ class DeformConv2D(nn.Module):
         overlap = (overlap_indices[..., :N] * overlap_indices[..., N:]).float()
 
         # bilinear kernel (b, h, w, N)
-        g_lt_x = 1 - torch.abs(p[..., :N] - q_lt[..., :N].type_as(p))
-        g_lt_y = 1 - torch.abs(p[..., N:] - q_lt[..., N:].type_as(p))
-        g_rb_x = 1 - torch.abs(p[..., :N] - q_rb[..., :N].type_as(p))
-        g_rb_y = 1 - torch.abs(p[..., N:] - q_rb[..., N:].type_as(p))
-        g_lb_x = 1 - torch.abs(p[..., :N] - q_lb[..., :N].type_as(p))
-        g_lb_y = 1 - torch.abs(p[..., N:] - q_lb[..., N:].type_as(p))
-        g_rt_x = 1 - torch.abs(p[..., :N] - q_rt[..., :N].type_as(p))
-        g_rt_y = 1 - torch.abs(p[..., N:] - q_rt[..., N:].type_as(p))
+        g_lt = (1 - torch.abs(p[..., :N] - q_lt[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_lt[..., N:].type_as(p)))
+        g_rb = (1 - torch.abs(p[..., :N] - q_rb[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_rb[..., N:].type_as(p)))
+        g_lb = (1 - torch.abs(p[..., :N] - q_lb[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_lb[..., N:].type_as(p)))
+        g_rt = (1 - torch.abs(p[..., :N] - q_rt[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_rt[..., N:].type_as(p)))
 
         # (b, c, h, w, N)
         x_q_lt = self._get_x_q(x, q_lt, N)
@@ -52,10 +48,10 @@ class DeformConv2D(nn.Module):
         x_q_rt = self._get_x_q(x, q_rt, N)
 
         # (b, c, h, w, N)
-        x_offset = (g_lt_x * g_lt_y).unsqueeze(dim=1) * x_q_lt + \
-                 (g_rb_x * g_rb_y).unsqueeze(dim=1) * x_q_rb + \
-                 (g_lb_x * g_lb_y).unsqueeze(dim=1) * x_q_lb + \
-                 (g_rt_x * g_rt_y).unsqueeze(dim=1) * x_q_rt
+        x_offset = g_lt.unsqueeze(dim=1) * x_q_lt + \
+                   g_rb.unsqueeze(dim=1) * x_q_rb + \
+                   g_lb.unsqueeze(dim=1) * x_q_lb + \
+                   g_rt.unsqueeze(dim=1) * x_q_rt
 
         x_offset /= overlap.unsqueeze(dim=1)
 
