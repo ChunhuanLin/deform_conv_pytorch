@@ -1,6 +1,6 @@
 ## PyTorch Implementation of  Deformable Convolution  
 This repository implements the defromable convolution architecture proposed in this paper:  
-[Jifeng Dai, Haozhi Qi, Yuwen Xiong, Yi Li, Guodong Zhang, Han Hu and Yichen Wei. Deformable Convolutional Networks. arXiv preprint arXiv:1703.06211, 2017.](https://arxiv.org/abs/1703.06211)  
+[*Jifeng Dai, Haozhi Qi, Yuwen Xiong, Yi Li, Guodong Zhang, Han Hu and Yichen Wei. Deformable Convolutional Networks. arXiv preprint arXiv:1703.06211, 2017.*](https://arxiv.org/abs/1703.06211)  
 
 ### Usage
 * The defromable convolution module, i.e., *DeformConv2D*, is defined in `deform_conv.py`.  
