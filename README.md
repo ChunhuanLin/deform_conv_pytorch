@@ -8,7 +8,7 @@ This repository implements the defromable convolution architecture proposed in t
 
 ### TODO
  - [x] Memory effeicent implementation.
- - [x] Test against to MXNet's official implementation.
+ - [x] Test against MXNet's official implementation.
  - [ ] Visualize offsets
  - [ ] Demo for RFCN implemantation
 
