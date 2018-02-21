@@ -7,7 +7,8 @@ This repository implements the defromable convolution architecture proposed in t
 * A simple demo is shown in `demo.py`, it's easy to interpolate the *DeformConv2D* module into your own networks.  
 
 ### TODO
- - [x] Memory effeicent implementation to bilinear interpolation.
+ - [x] Memory effeicent implementation.
+ - [x] Test against to MXNet's official implementation.
  - [ ] Visualize offsets
  - [ ] Demo for RFCN implemantation
 
