@@ -17,6 +17,7 @@ class DeformConv2D(nn.Module):
         ks = self.kernel_size
         N = offset.size(1) // 2
 
+        # Change offset's order from [x1, x2, ..., y1, y2, ...] to [x1, y1, x2, y2, ...]
         # Codes below are written to make sure same results of MXNet implementation.
         # You can remove them, and it won't influence the module's performance.
         offsets_index = Variable(torch.cat([torch.arange(0, 2*N, 2), torch.arange(1, 2*N+1, 2)]), requires_grad=False).type_as(x).long()
@@ -74,7 +75,7 @@ class DeformConv2D(nn.Module):
     def _get_p_n(self, N, dtype):
         p_n_x, p_n_y = np.meshgrid(range(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1),
                           range(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1), indexing='ij')
-        # (2N, 1), order[x1, x2, ..., y1, y2, ...]
+        # (2N, 1)
         p_n = np.concatenate((p_n_x.flatten(), p_n_y.flatten()))
         p_n = np.reshape(p_n, (1, 2*N, 1, 1))
         p_n = Variable(torch.from_numpy(p_n).type(dtype), requires_grad=False)
