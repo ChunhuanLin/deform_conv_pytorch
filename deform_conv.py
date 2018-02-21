@@ -5,41 +5,54 @@ import numpy as np
 
 
 class DeformConv2D(nn.Module):
-    def __init__(self, inc, outc, kernel_size=3, padding=1):
+    def __init__(self, inc, outc, kernel_size=3, padding=1, bias=None):
         super(DeformConv2D, self).__init__()
         self.kernel_size = kernel_size
         self.padding = padding
-        # Note: As illustrated in the paper, conv_offset's weights should be initialed with 0.
-        self.conv_offset = nn.Conv2d(inc, 2*self.kernel_size**2, kernel_size=kernel_size, padding=padding)
-        self.conv_kernel = nn.Conv2d(inc, outc, kernel_size=kernel_size, stride=kernel_size)
+        self.zero_padding = nn.ZeroPad2d(padding)
+        self.conv_kernel = nn.Conv2d(inc, outc, kernel_size=kernel_size, stride=kernel_size, bias=bias)
 
-    def forward(self, x):
-        # (b, 2N, h, w)
-        offset = self.conv_offset(x)
+    def forward(self, x, offset):
         dtype = offset.data.type()
         ks = self.kernel_size
         N = offset.size(1) // 2
 
-        # # (b, 2N, h, w)
+        # Codes below are written to make sure same results of MXNet implementation.
+        # You can remove them, and it won't influence the module's performance.
+        offsets_index = Variable(torch.cat([torch.arange(0, 2*N, 2), torch.arange(1, 2*N+1, 2)]), requires_grad=False).type_as(x).long()
+        offsets_index = offsets_index.unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1).expand(*offset.size())
+        offset = torch.gather(offset, dim=1, index=offsets_index)
+        # ------------------------------------------------------------------------
+
+        if self.padding:
+            x = self.zero_padding(x)
+
+        # (b, 2N, h, w)
         p = self._get_p(offset, dtype)
 
         # (b, h, w, 2N)
         p = p.contiguous().permute(0, 2, 3, 1)
+        q_lt = Variable(p.data, requires_grad=False).floor()
+        q_rb = q_lt + 1
 
-        q_lt = p.floor().long()
-        q_rb = p.ceil().long()
+        q_lt = torch.cat([torch.clamp(q_lt[..., :N], 0, x.size(2)-1), torch.clamp(q_lt[..., N:], 0, x.size(3)-1)], dim=-1).long()
+        q_rb = torch.cat([torch.clamp(q_rb[..., :N], 0, x.size(2)-1), torch.clamp(q_rb[..., N:], 0, x.size(3)-1)], dim=-1).long()
         q_lb = torch.cat([q_lt[..., :N], q_rb[..., N:]], -1)
         q_rt = torch.cat([q_rb[..., :N], q_lt[..., N:]], -1)
 
         # (b, h, w, N)
-        overlap_indices = torch.eq(q_lt, q_rb) + 1
-        overlap = (overlap_indices[..., :N] * overlap_indices[..., N:]).float()
+        mask = torch.cat([p[..., :N].lt(self.padding)+p[..., :N].gt(x.size(2)-1-self.padding),
+                          p[..., N:].lt(self.padding)+p[..., N:].gt(x.size(3)-1-self.padding)], dim=-1).type_as(p)
+        mask = mask.detach()
+        floor_p = p - (p - torch.floor(p))
+        p = p*(1-mask) + floor_p*mask
+        p = torch.cat([torch.clamp(p[..., :N], 0, x.size(2)-1), torch.clamp(p[..., N:], 0, x.size(3)-1)], dim=-1)
 
         # bilinear kernel (b, h, w, N)
-        g_lt = (1 - torch.abs(p[..., :N] - q_lt[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_lt[..., N:].type_as(p)))
-        g_rb = (1 - torch.abs(p[..., :N] - q_rb[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_rb[..., N:].type_as(p)))
-        g_lb = (1 - torch.abs(p[..., :N] - q_lb[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_lb[..., N:].type_as(p)))
-        g_rt = (1 - torch.abs(p[..., :N] - q_rt[..., :N].type_as(p))) * (1 - torch.abs(p[..., N:] - q_rt[..., N:].type_as(p)))
+        g_lt = (1 + (q_lt[..., :N].type_as(p) - p[..., :N])) * (1 + (q_lt[..., N:].type_as(p) - p[..., N:]))
+        g_rb = (1 - (q_rb[..., :N].type_as(p) - p[..., :N])) * (1 - (q_rb[..., N:].type_as(p) - p[..., N:]))
+        g_lb = (1 + (q_lb[..., :N].type_as(p) - p[..., :N])) * (1 - (q_lb[..., N:].type_as(p) - p[..., N:]))
+        g_rt = (1 - (q_rt[..., :N].type_as(p) - p[..., :N])) * (1 + (q_rt[..., N:].type_as(p) - p[..., N:]))
 
         # (b, c, h, w, N)
         x_q_lt = self._get_x_q(x, q_lt, N)
@@ -53,9 +66,6 @@ class DeformConv2D(nn.Module):
                    g_lb.unsqueeze(dim=1) * x_q_lb + \
                    g_rt.unsqueeze(dim=1) * x_q_rt
 
-        x_offset /= overlap.unsqueeze(dim=1)
-
-        # (b, c, h*kernel_size, w*kernel_size)
         x_offset = self._reshape_x_offset(x_offset, ks)
         out = self.conv_kernel(x_offset)
 
@@ -73,7 +83,7 @@ class DeformConv2D(nn.Module):
 
     @staticmethod
     def _get_p_0(h, w, N, dtype):
-        p_0_x, p_0_y = np.meshgrid(range(0, h), range(0, w), indexing='ij')
+        p_0_x, p_0_y = np.meshgrid(range(1, h+1), range(1, w+1), indexing='ij')
         p_0_x = p_0_x.flatten().reshape(1, 1, h, w).repeat(N, axis=1)
         p_0_y = p_0_y.flatten().reshape(1, 1, h, w).repeat(N, axis=1)
         p_0 = np.concatenate((p_0_x, p_0_y), axis=1)
@@ -89,28 +99,17 @@ class DeformConv2D(nn.Module):
         # (1, 2N, h, w)
         p_0 = self._get_p_0(h, w, N, dtype)
         p = p_0 + p_n + offset
-        p = torch.cat([torch.clamp(p[:, :N, :, :], 0, h-1), torch.clamp(p[:, N:, :, :], 0, w-1)], dim=1)
-
         return p
 
-    @staticmethod
-    def _get_q(x_size, dtype):
-        b, c, h, w = x_size
-        q_x, q_y = np.meshgrid(range(0, h), range(0, w), indexing='ij')
-        q_x = q_x.flatten().reshape(1, h, w)
-        q_y = q_y.flatten().reshape(1, h, w)
-        q = np.concatenate((q_x, q_y))
-        q = Variable(torch.from_numpy(q).type(dtype), requires_grad=False)
-
-        return q
-
     def _get_x_q(self, x, q, N):
-        b, c, h, w = x.size()
+        b, h, w, _ = q.size()
+        padded_w = x.size(3)
+        c = x.size(1)
         # (b, c, h*w)
         x = x.contiguous().view(b, c, -1)
 
         # (b, h, w, N)
-        index = q[..., :N]*w + q[..., N:]  # offset_x*offset_y + offset_y
+        index = q[..., :N]*padded_w + q[..., N:]  # offset_x*w + offset_y
         # (b, c, h*w*N)
         index = index.contiguous().unsqueeze(dim=1).expand(-1, c, -1, -1, -1).contiguous().view(b, c, -1)
 
