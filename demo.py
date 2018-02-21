@@ -12,7 +12,7 @@ from time import time
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-parser.add_argument('--batch-size', type=int, default=4, metavar='N',
+parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -63,6 +63,7 @@ class DeformNet(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
 
+        self.offsets = nn.Conv2d(128, 18, kernel_size=3, padding=1)
         self.conv4 = DeformConv2D(128, 128, kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm2d(128)
 
@@ -76,7 +77,9 @@ class DeformNet(nn.Module):
         x = self.bn2(x)
         x = F.relu(self.conv3(x))
         x = self.bn3(x)
-        x = F.relu(self.conv4(x))
+        # deformable convolution
+        offsets = self.offsets(x)
+        x = F.relu(self.conv4(x, offsets))
         x = self.bn4(x)
 
         x = F.avg_pool2d(x, kernel_size=28, stride=1).view(x.size(0), -1)
@@ -85,9 +88,9 @@ class DeformNet(nn.Module):
         return F.log_softmax(x, dim=1)
 
 
-class ExampleNet(nn.Module):
+class PlainNet(nn.Module):
     def __init__(self):
-        super(ExampleNet, self).__init__()
+        super(PlainNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
 
@@ -135,7 +138,7 @@ def init_conv_offset(m):
 
 
 model.apply(init_weights)
-model.conv4.conv_offset.apply(init_conv_offset)
+model.offsets.apply(init_conv_offset)
 
 if args.cuda:
     model.cuda()
@@ -145,7 +148,6 @@ optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
 def train(epoch):
     model.train()
-    since = time()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = Variable(data), Variable(target)
         if args.cuda:
@@ -159,9 +161,6 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.data[0]))
-
-    iter = time() - since
-    print("Spending {} for each epoch".format(iter))
 
 
 def test():
@@ -184,5 +183,8 @@ def test():
 
 
 for epoch in range(1, args.epochs + 1):
+    since = time()
     train(epoch)
+    iter = time() - since
+    print("Spends {}s for each training epoch".format(iter/args.epochs))
     test()
