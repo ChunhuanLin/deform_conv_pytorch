@@ -12,9 +12,10 @@ This repository implements the defromable convolution architecture proposed in t
  - [ ] Visualize offsets
  - [ ] Demo for RFCN implemantation
 
-### Statement
-* Previous [PyTorch](https://github.com/oeway/pytorch-deform-conv)/[TensorFlow](https://github.com/felixlaumon/deform-conv) implementation are different from the original paper as discussed in this [issue](https://github.com/felixlaumon/deform-conv/issues/4), which motivates me to do a new implementation in this repo.  
+### Notes
+* Although there has already been some implementations, such as [PyTorch](https://github.com/oeway/pytorch-deform-conv)/[TensorFlow](https://github.com/felixlaumon/deform-conv), they seem to have some problems as discussed [here](https://github.com/felixlaumon/deform-conv/issues/4).  
 * In my opinion, the *DeformConv2D* module is better added to top of higher-level features for the sake of better learning the offsets. More experiments are needed to validate this conjecture.
+* This repo has been verified by comparing with the official MXNet implementation, as showed in `test_against_mxnet.ipynb`.
 
 ### Requirements
 * [PyTorch-v0.3.0](http://pytorch.org/docs/0.3.0/)
